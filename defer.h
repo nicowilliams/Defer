@@ -5,7 +5,17 @@
 # define DEFER_MAX_DEFERRED_STATEMENTS 32
 #endif
 
+#ifdef defined(__GNUC__) || defined(__TINYC__) || (defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86)))
+
 #if defined(__GNUC__) || defined(__TINYC__)
+#define TakeLabelAddress(dest, n) (dest) = && _defer_tokpaste(_defer_ini, n)
+#define GotoLabelAddress(a) goto *(a)
+#else
+#define TakeLabelAddress(dest, n) \
+	__asm{ mov [dest],offset _defer_tokpaste(_defer_ini, n) }
+#define GotoLabelAddress(a) do { _label = (a); __asm{ jmp _label } } while (0)
+
+#endif
 
 #define Deferral \
 unsigned char _num_deferrals = 0; \
@@ -22,14 +32,14 @@ void *_defer_return_loc = 0, *_deferrals[DEFER_MAX_DEFERRED_STATEMENTS] = {0};
 #define _defer_tokpaste(a, b) a ## b
 
 #define _Defer(block, n) do { \
-	_deferrals[_num_deferrals++] = && _defer_tokpaste(_defer_ini, n); \
+	TakeLabelAddress(_deferrals[_num_deferrals++], n); \
 	if (0) { \
 		_defer_tokpaste(_defer_ini, n): \
 		block; \
 		if (_num_deferrals) { \
-			goto *_deferrals[--_num_deferrals]; \
+			GotoLabelAddress(_deferrals[--_num_deferrals]); \
 		} else { \
-			goto *_defer_return_loc; \
+			GotoLabelAddress(_defer_return_loc); \
 		} \
 	} \
 } while (0)
@@ -37,7 +47,7 @@ void *_defer_return_loc = 0, *_deferrals[DEFER_MAX_DEFERRED_STATEMENTS] = {0};
 #define _Return(n) \
 	if (_num_deferrals) { \
 		_defer_return_loc = && _defer_fini_ ## n; \
-		goto *_deferrals[--_num_deferrals]; \
+		GotoLabelAddress(_deferrals[--_num_deferrals]); \
 	} \
 \
 	_defer_fini_ ## n: \
